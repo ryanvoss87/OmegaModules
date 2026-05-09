@@ -1,0 +1,11 @@
+build/
+dist/
+*.vcvplugin
+*.so
+*.o
+*.d
+*.dll
+*.dylib
+.DS_Store
+.vscode/
+.idea/

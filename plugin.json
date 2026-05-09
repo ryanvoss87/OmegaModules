@@ -1,0 +1,29 @@
+{
+  "slug": "Omega",
+  "name": "Omega",
+  "version": "2.0.0",
+  "minRackVersion": "2.4.0",
+  "license": "GPL-3.0-or-later",
+  "brand": "",
+  "author": "Ryan Voss",
+  "authorEmail": "ryanvoss@protonmail.com",
+  "authorUrl": "",
+  "manualUrl": "https://github.com/ryanvoss87/OmegaModules#readme",
+  "sourceUrl": "https://github.com/ryanvoss87/OmegaModules",
+  "donateUrl": "https://www.paypal.com/ncp/payment/6GPSPGDWUQR74",
+  "modules": [
+    {
+      "slug": "OmegaDynamics",
+      "name": "Dynamics",
+      "description": "OTT-style multiband upward/downward compressor.",
+      "tags": ["Dynamics", "Compressor", "Effect"],
+      "keywords": "OTT Multiband Compressor"
+    },
+    {
+      "slug": "OmegaDynamicsExpander",
+      "name": "Dynamics Expander",
+      "description": "Expander module for Dynamics.",
+      "tags": ["Dynamics", "Compressor", "Expander"]
+    }
+  ]
+}
