@@ -387,15 +387,20 @@ struct Dynamics : Module {
              }
          }
 
-         const float inL = inputs[LEFT_INPUT].isConnected()
-                         ? inputs[LEFT_INPUT].getVoltageSum()
-                         : 0.f;
-         const float inR = inputs[RIGHT_INPUT].isConnected()
-                         ? inputs[RIGHT_INPUT].getVoltageSum()
-                         : inL;
+         if (inputs[LEFT_INPUT].isConnected()) {
+             const float inL = inputs[LEFT_INPUT].getVoltageSum();
+             const float inR = inputs[RIGHT_INPUT].isConnected()
+                             ? inputs[RIGHT_INPUT].getVoltageSum()
+                             : inL;
+             outputs[LEFT_OUTPUT].setVoltage(inL);
+             outputs[RIGHT_OUTPUT].setVoltage(inR);
 
-         outputs[LEFT_OUTPUT].setVoltage(inL);
-         outputs[RIGHT_OUTPUT].setVoltage(inR);
+         } else {
+
+           outputs[LEFT_OUTPUT].setVoltage(0.f);
+           outputs[RIGHT_OUTPUT].setVoltage(0.f);
+
+         }
     }
 
     void process(const ProcessArgs& args) override {
