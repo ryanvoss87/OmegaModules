@@ -30,12 +30,12 @@ OTT-style multiband upward/downward compressor. This effect splits incoming audi
 
 - **MIX**: Controls the mix amount between the dry (uncompressed) and wet (compressed) signals. 0% for full dry. 100% for full wet. Gains and compression are only applied to the wet signal. *Note: the dry signal still passes through the crossover filters, so there will be an inherent phase shift present at the crossover points even with 0% MIX.*
 - **TIME**: Scales the attack and release times of the compressors simultaneously. From 10% to 1000%.
-- **UP**: Sets the amount of upward compression, making the quieter parts of the signal sound louder. From 0% to 200%.
+- **UP**: Sets the amount of upward compression, boosting the quieter parts of the signal by making them louder. From 0% to 200%.
 - **DWN**: Sets the amount of downward compression, taming the louder parts of the signal by making them quieter. From 0% to 200%.
-- **IN**: The input gain applied to the incoming signal. From -24dB to +24dB.
-- **OUT**: The output gain applied to the wet signal. From -24dB to +24dB.
+- **IN**: The input gain applied to the incoming signal. From -18dB to +18dB.
+- **OUT**: The output gain applied to the wet signal. From -18dB to +18dB.
 - **L/R**: The stereo input and output ports. Audio outputs are colored blue. The left input must be connected to hear sound from the outputs. If only the left input is connected, the plugin will copy the mono signal to the right input. *Note: Dynamics applies stereo-linked compression, meaning the same amount of compression is applied to both L/R channels. This helps to preserve the stereo image of the signal.*
-- **LCD Display**: Displays the behavior of each individual band (left to right: lows, mids, highs). The white horizontal bars indicate the VU levels of the incoming signal. The vertical gray bars indicate the VU levels of the outgoing signal after compression. The display is also interactive - the user can click and drag the bars up and down to change the band compression threshold. Right-clicking above/below the slider will disable the up/down compression for that band. Make-up gains for each band can be set using the small knobs above the LCD Display.
+- **LCD Display**: Displays the behavior of each individual band (left to right: low, mid, high). The white horizontal bars indicate the VU levels of the incoming signal. The vertical gray bars indicate the VU levels of the outgoing signal after compression. The display is also interactive - the user can click and drag the bars up and down to change the band compression threshold. Right-clicking above/below the slider will disable the up/down compression for that band. Make-up gains for each band can be set using the small knobs above the LCD Display.
 - **Context Menu**: Right-clicking anywhere on the front panel will cause the module's context menu to appear; allowing for further customization of the module. The user can set the band crossover points, hard-clip limits for the output, panel theme, and audio quality. Quality has two states: "Eco" and "High". "Eco" can be used for most scenarios and is very CPU-friendly. The "High" setting applies oversampling and anti-aliasing to the processing, but uses more CPU.
 
 <a id="dynamicsexpander"></a>

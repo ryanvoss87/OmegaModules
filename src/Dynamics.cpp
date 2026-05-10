@@ -31,12 +31,12 @@
  *   f2 = 2500 Hz  (MID / HIGH boundary)
  *
  * Compressor:
- *   MIX     : wet/dry mix  (0 = bypass, 1 = full effect)
+ *   MIX     : wet/dry mix  (0% = bypass, 100% = full effect)
  *   TIME    : scale factor applied to all attack/release times  (0.1× – 10×)
- *   IN/OUT  : master gain (±24 dB)
+ *   IN/OUT  : master gain (±18 dB)
  *   DOWN    : downward compression per band (0 - 200%)
  *   UP      : upward compression per band (0 - 200%)
- *   L/M/H   : band gains (±24 dB), band thresh (-70dB - 0dB)
+ *   L/M/H   : band gains (±18 dB), band thresh (-70dB - 0dB)
  */
 
 #include "plugin.hpp"
@@ -55,7 +55,7 @@ constexpr const float DB_MIN = -70.f;   // bottom of scale
 constexpr const float DB_MAX =   0.f;   // top of scale
 constexpr const float DB_DELTA[3] = {2.65f, 5.8f, 4.5f}; // band threshold widths/2
 
-struct Band {
+struct BandComp {
 
     dsp::EnvFollower env;
 
@@ -67,6 +67,44 @@ struct Band {
     float updB   = -35.f;
     float downOn = 1.f;
     float upOn   = 1.f;
+
+    inline __m128d process(__m128d bandIn, float indB0, float mix, float down,
+                                 float up, float baseDB) {
+
+          constexpr float NORM_V2 = 0.04f; // (1/5V)^2
+
+          // take the maximum squared value of stereo channels to compute envelope
+          // stereo-linked compression preserves stereo image of the audio.
+          const double detect = max_f64_pd(_mm_mul_pd(bandIn, bandIn));
+          const float sig2 = static_cast<float>(detect);
+
+          // Normalised level (NORM_V = 5 V → 0 dBFS)
+          const float env2 = env.process(sig2) * NORM_V2;
+
+          // Convert to dB. Guard against log(0): floor at –120 dBFS
+          const float envDB = (env2 < 1e-12f) ? -120.f : 10.f * fastlog10f(env2) + indB0;
+
+          // Downward compression (tame loud signals)
+          float d = envDB - downdB;
+          float gDB = d > 0.f ? downOn * d * down : 0.f;
+
+          // Upward compression (lift quiet signals)
+          d = updB - envDB;
+          gDB += d > 0.f ? upOn * d * up : 0.f;
+
+          // Safety clamp (prevent extreme gain swings)
+          gDB = mix * clamp(gDB, -60.f, 36.f);
+
+          // VU display meters
+          indB  = envDB;
+          outdB = envDB + gDB;
+
+          // scale band by gains
+          const float bandGain = dB2gainf(baseDB + gDB);
+          output = _mm_mul_pd(bandIn, _mm_set1_pd(bandGain));
+
+          return output;
+      }
 };
 
 // ─────────────────────────────────────────────────────────────
@@ -111,7 +149,7 @@ struct Dynamics : Module {
     dsp::LR4_128d lpf2, hpf2; // split at FREQ2 → MID band  &  HIGH band
 
     // Per band [b]
-    Band bands[3];
+    BandComp bands[3];
 
     // hard clip values (V)
     __m128d clipLo = _mm_set1_pd(-10.0);
@@ -124,7 +162,7 @@ struct Dynamics : Module {
     float p_out    = 0.f;
     float p_up     = 0.f;
     float p_down   = 0.f;
-    float p_Time   = -2.0f;
+    float p_Time   = 0.0f;
     float p_freq1  = 88.3f;
     float p_freq2  = 2500.f;
 
@@ -155,8 +193,8 @@ struct Dynamics : Module {
 
         config(PARAMS_LEN, INPUTS_LEN, OUTPUTS_LEN, LIGHTS_LEN);
 
-        configParam(IN_PARAM,  -24.f, 24.f, 0.f, "Input Gain",  " dB");
-        configParam(OUT_PARAM, -24.f, 24.f, 0.f, "Output Gain", " dB");
+        configParam(IN_PARAM,  -18.f, 18.f, 0.f, "Input Gain",  " dB");
+        configParam(OUT_PARAM, -18.f, 18.f, 0.f, "Output Gain", " dB");
         configParam<ui::TimeParamQuantity>(TIME_PARAM,  -1.f, 1.f, 0.f, "Time");
         configParam<ui::PercentParamQuantity>(MIX_PARAM, 0.f, 1.f, 1.f, "Mix");
         configParam<ui::PercentParamQuantity>(UP_PARAM, 0.f, 2.f, 1.0f, "Upward");
@@ -166,7 +204,7 @@ struct Dynamics : Module {
         const float DB_MID[3]   = {-32.11f, -29.96f, -31.26f};
 
         for (int b = 0; b < 3; ++b) {
-            configParam(GAIN_PARAM_0 + b, -24.f, 24.f, 0.f, bNames[b] + " Gain", " dB");
+            configParam(GAIN_PARAM_0 + b, -18.f, 18.f, 0.f, bNames[b] + " Gain", " dB");
             configParam(THRESH_PARAM_0 + b, DB_MIN, DB_MAX, DB_MID[b], bNames[b] + " Thresh", "dB");
             configParam(DOWN_ACTIVE_PARAM_0 + b, 0.f, 1.f, 1.f, bNames[b] + " Down Active");
             configParam(UP_ACTIVE_PARAM_0 + b, 0.f, 1.f, 1.f, bNames[b] + " Up Active");
@@ -214,15 +252,28 @@ struct Dynamics : Module {
         updateFilters = updateParams = updateEnvelopes = true;
     }
 
+    void onReset() override {
+
+        lpf1.reset();
+        hpf1.reset();
+        lpf2.reset();
+        hpf2.reset();
+        upSample.reset();
+        downSample.reset();
+
+        for (int b = 0; b < 3; ++b) {
+            bands[b].env.reset();
+            bandDecimators[b].reset();
+        }
+    }
+
     void updateOversampleMode() {
 
         onReset();
-
-        os = clamp(oversampleMode, 0, 1);
+        oversampleMode = clamp(oversampleMode, 0, 1);
+        os = oversampleMode;
         sr = lastSampleRate * (1 << os);
-
-        updateFilters = true;
-        updateEnvelopes = true;
+        updateFilters = updateEnvelopes = true;
     }
 
     void rebuildFilters() {
@@ -248,23 +299,6 @@ struct Dynamics : Module {
         }
 
         updateEnvelopes = false;
-    }
-
-    void onReset() override {
-
-        lpf1.reset();
-        hpf1.reset();
-        lpf2.reset();
-        hpf2.reset();
-        upSample.reset();
-        downSample.reset();
-
-        for (int b = 0; b < 3; ++b) {
-            bands[b].env.reset();
-            bandDecimators[b].reset();
-        }
-
-        updateParams = true;
     }
 
     void updateParameters() {
@@ -335,7 +369,7 @@ struct Dynamics : Module {
 
     // ── Process ─────────────────────────────────────────────
 
-    void 	processBypass (const ProcessArgs &args) override {
+    void processBypass (const ProcessArgs &args) override {
 
          updateParams = true;
 
@@ -469,45 +503,6 @@ struct Dynamics : Module {
 
     }
 
-    template <int B>
-    inline __m128d processBand(__m128d bandIn, float inDB, float mix, float down,
-                               float up, float baseDB) {
-
-        constexpr float NORM_V2 = 0.04f; // (1/5V)^2
-
-        // take the maximum squared value of stereo channels to compute envelope
-        // stereo-linked compression preserves stereo image of the audio.
-        const double detect = max_f64_pd(_mm_mul_pd(bandIn, bandIn));
-        const float sig2 = static_cast<float>(detect);
-
-        // Normalised level (NORM_V = 5 V → 0 dBFS)
-        const float env2 = bands[B].env.process(sig2) * NORM_V2;
-
-        // Convert to dB. Guard against log(0): floor at –120 dBFS
-        const float envDB = (env2 < 1e-12f) ? -120.f : 10.f * fastlog10f(env2) + inDB;
-
-        // Downward compression (tame loud signals)
-        float d = envDB - bands[B].downdB;
-        float gainDB = d > 0.f ? bands[B].downOn * d * down : 0.f;
-
-        // Upward compression (lift quiet signals)
-        d = bands[B].updB - envDB;
-        gainDB += d > 0.f ? bands[B].upOn * d * up : 0.f;
-
-        // Safety clamp (prevent extreme gain swings)
-        gainDB = mix * clamp(gainDB, -60.f, 36.f);
-
-        // VU display meters
-        bands[B].indB  = envDB;
-        bands[B].outdB = envDB + gainDB;
-
-        // scale bands by gains and add it to the output
-        const float bandGain = dB2gainf(baseDB + gainDB);
-        bands[B].output = _mm_mul_pd(bandIn, _mm_set1_pd(bandGain));
-
-        return bands[B].output;
-    }
-
     inline __m128d processStereoCore(__m128d input, float inDB, float mix, float up,
                                   float down, const float* bandBaseDB) {
 
@@ -521,9 +516,9 @@ struct Dynamics : Module {
 
         __m128d output = _mm_setzero_pd();
 
-        output = _mm_add_pd(output, processBand<0>(high, inDB, mix, down, up, bandBaseDB[0]));
-        output = _mm_add_pd(output, processBand<1>(mid,  inDB, mix, down, up, bandBaseDB[1]));
-        output = _mm_add_pd(output, processBand<2>(low,  inDB, mix, down, up, bandBaseDB[2]));
+        output = _mm_add_pd(output, bands[0].process(high, inDB, mix, down, up, bandBaseDB[0]));
+        output = _mm_add_pd(output, bands[1].process(mid,  inDB, mix, down, up, bandBaseDB[1]));
+        output = _mm_add_pd(output, bands[2].process(low,  inDB, mix, down, up, bandBaseDB[2]));
 
         // safety clip signal +/- p_clip Volts
         return _mm_min_pd(_mm_max_pd(output, clipLo), clipHi);
@@ -538,8 +533,8 @@ struct Dynamics : Module {
         constexpr float UP_COEF = 0.760191846523f; // 1 - 1/4.17
         constexpr float DOWN_COEF = -0.985007496252f; // -(1 - 1/66.7)
 
-        const float inDB     = clamp(p_in + m_in, -48.f, 48.f);
-        const float outDB    = clamp(p_out + m_out, -48.f, 48.f);
+        const float inDB     = clamp(p_in + m_in, -36.f, 36.f);
+        const float outDB    = clamp(p_out + m_out, -36.f, 36.f);
         const float mix      = clamp(p_mix + m_mix, 0.f, 1.f);
         const float up       = clamp(p_up + m_up, 0.f, 2.f) * UP_COEF;
         const float down     = clamp(p_down + m_down, 0.f, 2.f) * DOWN_COEF;

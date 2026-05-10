@@ -156,7 +156,7 @@ struct DynamicsExpander : Module {
         if (0 == ((args.frame + getId()) & 255)){
 
             constexpr float CV_SCALE = 0.1f;
-            constexpr float GAIN_CV_SCALE = CV_SCALE * 24.f;
+            constexpr float GAIN_CV_SCALE = CV_SCALE * 18.f;
 
             p_mix  = CV_SCALE * params[MIX_CV_AMT_PARAM].getValue();
             p_up   = CV_SCALE * params[UP_CV_AMT_PARAM].getValue();
